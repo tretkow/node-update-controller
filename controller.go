@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -276,9 +277,6 @@ func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
 	labels := map[string]string{
 		"app": "container-linux-update-operator",
 	}
-	nodeSelector := map[string]string{
-		labelLinux: "true",
-	}
 
 	// based on https://github.com/coreos/container-linux-update-operator/blob/master/examples/deploy/update-operator.yaml
 	return &appsv1.Deployment{
@@ -310,7 +308,6 @@ func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
 							},
 						},
 					},
-					NodeSelector: nodeSelector,
 					Tolerations: []corev1.Toleration{
 						corev1.Toleration{
 							Key:      "node-role.kubernetes.io/master",
@@ -336,5 +333,118 @@ func (c *Controller) deployUpdateAgentDaemonSet() error {
 }
 
 func newUpdateAgentDaemonSet() *appsv1.DaemonSet {
-	return nil
+	labels := map[string]string{
+		"app": "container-linux-update-agent",
+	}
+	nodeSelector := map[string]string{
+		labelLinux: "true",
+	}
+
+	maxAvailable := intstr.FromInt(1)
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "container-linux-update-agent",
+			Namespace: "reboot-coordinator",
+		},
+		Spec: appsv1.DaemonSetSpec{
+			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
+				Type: appsv1.RollingUpdateDaemonSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+					MaxUnavailable: &maxAvailable,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						corev1.Container{
+							Name:    "update-agent",
+							Image:   "quay.io/coreos/container-linux-update-operator:v0.7.0",
+							Command: []string{"/bin/update-agent"},
+							VolumeMounts: []corev1.VolumeMount{
+								corev1.VolumeMount{
+									Name:      "var-run-dbus",
+									MountPath: "/var/run/dbus",
+								},
+								corev1.VolumeMount{
+									Name:      "etc-coreos",
+									MountPath: "/etc/coreos",
+								},
+								corev1.VolumeMount{
+									Name:      "usr-share-coreos",
+									MountPath: "/usr/share/coreos",
+								},
+								corev1.VolumeMount{
+									Name:      "etc-os-release",
+									MountPath: "/etc/os-release",
+								},
+							},
+							Env: []corev1.EnvVar{
+								corev1.EnvVar{
+									Name: "UPDATE_AGENT_NODE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "spec.nodeName",
+										},
+									},
+								},
+								corev1.EnvVar{
+									Name: "POD_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+						},
+					},
+					NodeSelector: nodeSelector,
+					Tolerations: []corev1.Toleration{
+						corev1.Toleration{
+							Key:      "node-role.kubernetes.io/master",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+					},
+					Volumes: []corev1.Volume{
+						corev1.Volume{
+							Name: "var-run-dbus",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/var/run/dbus",
+								},
+							},
+						},
+						corev1.Volume{
+							Name: "etc-coreos",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/etc/coreos",
+								},
+							},
+						},
+						corev1.Volume{
+							Name: "usr-share-coreos",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/usr/share/coreos",
+								},
+							},
+						},
+						corev1.Volume{
+							Name: "etc-os-release",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/etc/os-release",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
