@@ -260,14 +260,19 @@ func isLabelSet(labels map[string]string) bool {
 	return b
 }
 
-func deployContainerLinuxUpdateOperator(node *corev1.Node) {
+func (c *Controller) deployContainerLinuxUpdateOperator() error {
 	// deployment := newDeploymentForContainerLinuxUpdateOperator(node)
+	_, err := c.kubeclientset.AppsV1().Deployments(metav1.NamespaceDefault).Update(
+		newDeploymentForContainerLinuxUpdateOperator())
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error()))
+		return err
+	}
+
+	return nil
 }
 
-// newDeployment creates a new Deployment for a Foo resource. It also sets
-// the appropriate OwnerReferences on the resource so handleObject can discover
-// the Foo resource that 'owns' it.
-func newDeploymentForContainerLinuxUpdateOperator(node *corev1.Node) *appsv1.Deployment {
+func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
 	labels := map[string]string{
 		"app": "container-linux-update-operator",
 	}
@@ -319,4 +324,17 @@ func newDeploymentForContainerLinuxUpdateOperator(node *corev1.Node) *appsv1.Dep
 	}
 }
 
-//TODO: How to stop ?
+func (c *Controller) deployUpdateAgentDaemonSet() error {
+	_, err := c.kubeclientset.AppsV1().DaemonSets(metav1.NamespaceDefault).Update(
+		newUpdateAgentDaemonSet())
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error()))
+		return err
+	}
+
+	return nil
+}
+
+func newUpdateAgentDaemonSet() *appsv1.DaemonSet {
+	return nil
+}
