@@ -47,6 +47,9 @@ type Controller struct {
 	deploymentsLister appslisters.DeploymentLister
 	deploymentsSynced cache.InformerSynced
 
+	daemonSetsLister appslisters.DaemonSetLister
+	daemonSetsSynced cache.InformerSynced
+
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
 	// means we can ensure we only process a fixed amount of resources at a
@@ -61,7 +64,8 @@ type Controller struct {
 func NewController(
 	kubeclientset kubernetes.Interface,
 	nodeInformer coreinformers.NodeInformer,
-	deploymentInformer appsinformers.DeploymentInformer) *Controller {
+	deploymentInformer appsinformers.DeploymentInformer,
+	daemonSetInformer appsinformers.DaemonSetInformer) *Controller {
 
 	// Create event broadcaster
 	klog.V(4).Info("Creating event broadcaster")
@@ -76,8 +80,11 @@ func NewController(
 		nodesSynced:       nodeInformer.Informer().HasSynced,
 		deploymentsLister: deploymentInformer.Lister(),
 		deploymentsSynced: deploymentInformer.Informer().HasSynced,
-		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Foos"),
-		recorder:          recorder,
+		daemonSetsLister:  daemonSetInformer.Lister(),
+		daemonSetsSynced:  daemonSetInformer.Informer().HasSynced,
+
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Foos"),
+		recorder:  recorder,
 	}
 
 	klog.Info("Setting up event handlers")
@@ -114,7 +121,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.nodesSynced, c.deploymentsSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.nodesSynced, c.deploymentsSynced, c.daemonSetsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -328,14 +335,17 @@ func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
 }
 
 func (c *Controller) deployUpdateAgentDaemonSet() error {
-	_, err := c.kubeclientset.AppsV1().DaemonSets(metav1.NamespaceDefault).Create(
-		newUpdateAgentDaemonSet())
-	if err != nil {
-		utilruntime.HandleError(err)
+	ds := newUpdateAgentDaemonSet()
+	_, err := c.daemonSetsLister.DaemonSets(metav1.NamespaceDefault).Get(ds.Name)
+	if err == nil {
+		_, err = c.kubeclientset.AppsV1().DaemonSets(metav1.NamespaceDefault).Update(ds)
 		return err
 	}
-
-	return nil
+	// If the resource doesn't exist, we'll create it
+	if errors.IsNotFound(err) {
+		_, err = c.kubeclientset.AppsV1().DaemonSets(metav1.NamespaceDefault).Create(ds)
+	}
+	return err
 }
 
 func newUpdateAgentDaemonSet() *appsv1.DaemonSet {
