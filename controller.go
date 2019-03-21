@@ -34,7 +34,6 @@ var (
 	operatorReplicas = int32(1)
 )
 
-// Controller is the controller implementation for Foo resources
 type Controller struct {
 	// kubeclientset is a standard kubernetes clientset
 	kubeclientset kubernetes.Interface
@@ -53,14 +52,11 @@ type Controller struct {
 	recorder record.EventRecorder
 }
 
-// NewController returns a new sample controller
 func NewController(
 	kubeclientset kubernetes.Interface,
 	nodeInformer coreinformers.NodeInformer) *Controller {
 
 	// Create event broadcaster
-	// Add sample-controller types to the default Kubernetes Scheme so Events can be
-	// logged for node-label-controller types.
 	klog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -76,7 +72,6 @@ func NewController(
 	}
 
 	klog.Info("Setting up event handlers")
-	// Set up an event handler for when Foo resources change
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueNode,
 		UpdateFunc: func(old, new interface{}) {
@@ -87,9 +82,6 @@ func NewController(
 	return controller
 }
 
-// enqueueFoo takes a Foo resource and converts it into a namespace/name
-// string which is then put onto the work queue. This method should *not* be
-// passed resources of any type other than Foo.
 func (c *Controller) enqueueNode(obj interface{}) {
 	var key string
 	var err error
@@ -118,7 +110,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	}
 
 	klog.Info("Starting workers")
-	// Launch two workers to process Foo resources
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
@@ -171,8 +162,7 @@ func (c *Controller) processNextWorkItem() bool {
 			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 			return nil
 		}
-		// Run the syncHandler, passing it the namespace/name string of the
-		// Foo resource to be synced.
+
 		if err := c.syncHandler(key); err != nil {
 			// Put the item back on the workqueue to handle any transient errors.
 			c.workqueue.AddRateLimited(key)

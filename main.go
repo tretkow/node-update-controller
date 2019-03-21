@@ -36,10 +36,6 @@ func main() {
 		klog.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
-	// clusterInformerFactory := clusterinformers.NewFilteredSharedInformerFactory(machineClient, time.Minute*15, metav1.NamespaceAll, labelSelector(name))
-
-	// nodeInformer:         kubeInformerFactory.Core().V1().Nodes().Informer(),
-
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 
 	controller := NewController(kubeClient,
