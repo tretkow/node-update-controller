@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +21,11 @@ import (
 	"k8s.io/klog"
 )
 
-const controllerAgentName = "node-label-controller"
+const (
+	controllerAgentName = "node-label-controller"
+	osLinux             = "linux"
+	labelLinux          = "kubermatic.io/uses-container-linux"
+)
 
 // Controller is the controller implementation for Foo resources
 type Controller struct {
@@ -204,8 +209,47 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	os := node.Status.NodeInfo.OperatingSystem
-	fmt.Println(os)
+	if isLinux(node) {
+		if err := c.setNodeLabel(node); err != nil {
+			return err
+		}
+	}
 
 	return nil
+}
+
+func isLinux(node *corev1.Node) bool {
+	os := node.Status.NodeInfo.OperatingSystem
+	return os == osLinux
+}
+
+func (c *Controller) setNodeLabel(node *corev1.Node) error {
+	if isLabelSet(node.Labels) {
+		fmt.Printf("Label already set\n")
+		return nil
+	}
+	fmt.Printf("Setting label %s=true on node %s", labelLinux, node.Name)
+
+	nodeCpy := node.DeepCopy()
+	nodeCpy.Labels[labelLinux] = "true"
+	var err error
+	node, err = c.kubeclientset.CoreV1().Nodes().Update(nodeCpy)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Can't set the label: %s", err.Error()))
+		return err
+	}
+
+	return nil
+}
+
+func isLabelSet(labels map[string]string) bool {
+	v, isSet := labels[labelLinux]
+	if !isSet {
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false
+	}
+	return b
 }
