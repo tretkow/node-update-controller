@@ -5,8 +5,10 @@ import (
 	"strconv"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -25,6 +27,10 @@ const (
 	controllerAgentName = "node-label-controller"
 	osLinux             = "linux"
 	labelLinux          = "kubermatic.io/uses-container-linux"
+)
+
+var (
+	operatorReplicas = int32(1)
 )
 
 // Controller is the controller implementation for Foo resources
@@ -253,3 +259,64 @@ func isLabelSet(labels map[string]string) bool {
 	}
 	return b
 }
+
+func deployContainerLinuxUpdateOperator(node *corev1.Node) {
+	// deployment := newDeploymentForContainerLinuxUpdateOperator(node)
+}
+
+// newDeployment creates a new Deployment for a Foo resource. It also sets
+// the appropriate OwnerReferences on the resource so handleObject can discover
+// the Foo resource that 'owns' it.
+func newDeploymentForContainerLinuxUpdateOperator(node *corev1.Node) *appsv1.Deployment {
+	labels := map[string]string{
+		"app": "container-linux-update-operator",
+	}
+	nodeSelector := map[string]string{
+		labelLinux: "true",
+	}
+
+	// based on https://github.com/coreos/container-linux-update-operator/blob/master/examples/deploy/update-operator.yaml
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "container-linux-update-operator",
+			Namespace: "reboot-coordinator",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &operatorReplicas,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						corev1.Container{
+							Name:    "update-operator",
+							Image:   "quay.io/coreos/container-linux-update-operator:v0.7.0",
+							Command: []string{"/bin/update-operator"},
+							Env: []corev1.EnvVar{
+								corev1.EnvVar{
+									Name: "POD_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+						},
+					},
+					NodeSelector: nodeSelector,
+					Tolerations: []corev1.Toleration{
+						corev1.Toleration{
+							Key:      "node-role.kubernetes.io/master",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+//TODO: How to stop ?
