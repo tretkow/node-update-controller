@@ -262,8 +262,7 @@ func isLabelSet(labels map[string]string) bool {
 }
 
 func (c *Controller) deployContainerLinuxUpdateOperator() error {
-	// deployment := newDeploymentForContainerLinuxUpdateOperator(node)
-	_, err := c.kubeclientset.AppsV1().Deployments(metav1.NamespaceDefault).Update(
+	_, err := c.kubeclientset.AppsV1().Deployments(metav1.NamespaceDefault).Create(
 		newDeploymentForContainerLinuxUpdateOperator())
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error()))
@@ -282,9 +281,12 @@ func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "container-linux-update-operator",
-			Namespace: "reboot-coordinator",
+			Namespace: metav1.NamespaceDefault, //"reboot-coordinator",
 		},
 		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
 			Replicas: &operatorReplicas,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -322,10 +324,10 @@ func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
 }
 
 func (c *Controller) deployUpdateAgentDaemonSet() error {
-	_, err := c.kubeclientset.AppsV1().DaemonSets(metav1.NamespaceDefault).Update(
+	_, err := c.kubeclientset.AppsV1().DaemonSets(metav1.NamespaceDefault).Create(
 		newUpdateAgentDaemonSet())
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error()))
+		utilruntime.HandleError(err)
 		return err
 	}
 
@@ -344,9 +346,12 @@ func newUpdateAgentDaemonSet() *appsv1.DaemonSet {
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "container-linux-update-agent",
-			Namespace: "reboot-coordinator",
+			Namespace: metav1.NamespaceDefault, //"reboot-coordinator",
 		},
 		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
 			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
 				Type: appsv1.RollingUpdateDaemonSetStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
