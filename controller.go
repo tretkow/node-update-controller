@@ -5,6 +5,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -182,5 +183,29 @@ func (c *Controller) processNextWorkItem() bool {
 
 func (c *Controller) syncHandler(key string) error {
 	fmt.Printf("Syncing %s\n", key)
+
+	// Convert the namespace/name string into a distinct namespace and name
+	_, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		return nil
+	}
+
+	// Get the Node resource with this namespace/name
+	node, err := c.nodesLister.Get(name)
+	if err != nil {
+		// The Node resource may no longer exist, in which case we stop
+		// processing.
+		if errors.IsNotFound(err) {
+			utilruntime.HandleError(fmt.Errorf("node '%s' in work queue no longer exists", key))
+			return nil
+		}
+
+		return err
+	}
+
+	os := node.Status.NodeInfo.OperatingSystem
+	fmt.Println(os)
+
 	return nil
 }
