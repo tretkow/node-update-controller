@@ -39,14 +39,9 @@ func main() {
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 
 	controller := NewController(kubeClient,
-		kubeInformerFactory.Core().V1().Nodes())
-
-	if err := controller.deployContainerLinuxUpdateOperator(); err != nil {
-		klog.Fatalf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error())
-	}
-	if err := controller.deployUpdateAgentDaemonSet(); err != nil {
-		klog.Fatalf("Can't deploy UpdateAgentDaemonSet: %s", err.Error())
-	}
+		kubeInformerFactory.Core().V1().Nodes(),
+		kubeInformerFactory.Apps().V1().Deployments(),
+	)
 
 	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(stopCh)
 	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.

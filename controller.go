@@ -12,7 +12,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	appsinformers "k8s.io/client-go/informers/apps/v1"
 	coreinformers "k8s.io/client-go/informers/core/v1"
+	appslisters "k8s.io/client-go/listers/apps/v1"
+
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 
@@ -41,6 +44,9 @@ type Controller struct {
 	nodesLister corelisters.NodeLister
 	nodesSynced cache.InformerSynced
 
+	deploymentsLister appslisters.DeploymentLister
+	deploymentsSynced cache.InformerSynced
+
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
 	// means we can ensure we only process a fixed amount of resources at a
@@ -54,7 +60,8 @@ type Controller struct {
 
 func NewController(
 	kubeclientset kubernetes.Interface,
-	nodeInformer coreinformers.NodeInformer) *Controller {
+	nodeInformer coreinformers.NodeInformer,
+	deploymentInformer appsinformers.DeploymentInformer) *Controller {
 
 	// Create event broadcaster
 	klog.V(4).Info("Creating event broadcaster")
@@ -64,11 +71,13 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Controller{
-		kubeclientset: kubeclientset,
-		nodesLister:   nodeInformer.Lister(),
-		nodesSynced:   nodeInformer.Informer().HasSynced,
-		workqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Foos"),
-		recorder:      recorder,
+		kubeclientset:     kubeclientset,
+		nodesLister:       nodeInformer.Lister(),
+		nodesSynced:       nodeInformer.Informer().HasSynced,
+		deploymentsLister: deploymentInformer.Lister(),
+		deploymentsSynced: deploymentInformer.Informer().HasSynced,
+		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Foos"),
+		recorder:          recorder,
 	}
 
 	klog.Info("Setting up event handlers")
@@ -105,9 +114,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.nodesSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.nodesSynced, c.deploymentsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
+
+	c.deployContainerLinuxUpdateOperatorAndAgent()
 
 	klog.Info("Starting workers")
 	for i := 0; i < threadiness; i++ {
@@ -252,14 +263,17 @@ func isLabelSet(labels map[string]string) bool {
 }
 
 func (c *Controller) deployContainerLinuxUpdateOperator() error {
-	_, err := c.kubeclientset.AppsV1().Deployments(metav1.NamespaceDefault).Create(
-		newDeploymentForContainerLinuxUpdateOperator())
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error()))
+	d := newDeploymentForContainerLinuxUpdateOperator()
+	_, err := c.deploymentsLister.Deployments(metav1.NamespaceDefault).Get(d.Name)
+	if err == nil {
+		_, err = c.kubeclientset.AppsV1().Deployments(metav1.NamespaceDefault).Update(d)
 		return err
 	}
-
-	return nil
+	// If the resource doesn't exist, we'll create it
+	if errors.IsNotFound(err) {
+		_, err = c.kubeclientset.AppsV1().Deployments(metav1.NamespaceDefault).Create(d)
+	}
+	return err
 }
 
 func newDeploymentForContainerLinuxUpdateOperator() *appsv1.Deployment {
@@ -441,5 +455,14 @@ func newUpdateAgentDaemonSet() *appsv1.DaemonSet {
 				},
 			},
 		},
+	}
+}
+
+func (c *Controller) deployContainerLinuxUpdateOperatorAndAgent() {
+	if err := c.deployContainerLinuxUpdateOperator(); err != nil {
+		klog.Fatalf("Can't deploy ContainerLinuxUpdateOperator: %s", err.Error())
+	}
+	if err := c.deployUpdateAgentDaemonSet(); err != nil {
+		klog.Fatalf("Can't deploy UpdateAgentDaemonSet: %s", err.Error())
 	}
 }
